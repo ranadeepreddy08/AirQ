@@ -161,7 +161,8 @@ if selected_city != "Custom / Map click":
 m = folium.Map(
     location=[st.session_state.map_lat, st.session_state.map_lon],
     zoom_start=10,
-    tiles="CartoDB positron",
+    tiles="https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png",
+    attr='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/">CARTO</a>',
 )
 folium.Marker(
     [st.session_state.map_lat, st.session_state.map_lon],

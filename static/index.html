@@ -1,0 +1,289 @@
+﻿<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Air Quality Monitor &amp; Predictor</title>
+<meta name="description" content="Real-time air quality monitoring and ML-based forecasting powered by Open-Meteo. Track PM2.5, PM10, NO2, SO2, O3 and US AQI for Indian cities." />
+
+<!-- Leaflet -->
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<!-- Chart.js -->
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/chart.umd.min.js"></script>
+<!-- Inter font -->
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
+<!-- App styles -->
+<link rel="stylesheet" href="/static/style.css" />
+</head>
+
+<body>
+
+<div class="app-shell">
+
+  <!-- ═══════════════════════════════ SIDEBAR ═══════════════════════════ -->
+  <aside class="sidebar" id="sidebar">
+    <div>
+      <div class="sidebar-logo"><span>🌬️</span> Air Quality</div>
+      <div class="sidebar-caption">Open-Meteo · No API key required</div>
+    </div>
+
+    <hr class="sidebar-divider" />
+
+    <!-- City preset -->
+    <div>
+      <p class="sidebar-section-label">📍 Location</p>
+      <label class="ctrl-label">Preset city</label>
+      <select id="city-select">
+        <option value="">Custom / Map click</option>
+        <option value="Chennai"   data-lat="13.0827" data-lon="80.2707" selected>Chennai</option>
+        <option value="Delhi"     data-lat="28.6139" data-lon="77.2090">Delhi</option>
+        <option value="Mumbai"    data-lat="19.0760" data-lon="72.8777">Mumbai</option>
+        <option value="Bengaluru" data-lat="12.9716" data-lon="77.5946">Bengaluru</option>
+      </select>
+    </div>
+
+    <hr class="sidebar-divider" />
+
+    <!-- Time window -->
+    <div>
+      <p class="sidebar-section-label">⏱️ Time window</p>
+      <div class="radio-group" style="margin-bottom:10px">
+        <div class="radio-pill active" id="pill-days" onclick="setMode('days')">Last N days</div>
+        <div class="radio-pill" id="pill-range" onclick="setMode('range')">Date range</div>
+      </div>
+      <div id="ctrl-days">
+        <label class="ctrl-label">Past days</label>
+        <div class="range-row">
+          <input type="range" id="days-slider" min="1" max="30" value="7" oninput="document.getElementById('days-val').textContent=this.value" />
+          <span class="range-val" id="days-val">7</span>
+        </div>
+      </div>
+      <div id="ctrl-range" style="display:none">
+        <div class="date-pair">
+          <div>
+            <label class="ctrl-label">From</label>
+            <input type="date" id="date-start" />
+          </div>
+          <div>
+            <label class="ctrl-label">To</label>
+            <input type="date" id="date-end" />
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <hr class="sidebar-divider" />
+
+    <!-- Forecast horizon -->
+    <div>
+      <p class="sidebar-section-label">🔮 Forecast horizon</p>
+      <select id="horizon-select">
+        <option value="24">24 hours</option>
+        <option value="48">48 hours</option>
+      </select>
+    </div>
+
+    <button class="btn-fetch" id="fetch-btn" onclick="fetchAll()">🔄 Load Data</button>
+
+    <hr class="sidebar-divider" />
+
+    <div class="sidebar-links">
+      <strong>Official sources</strong>
+      <a href="https://cpcb.nic.in" target="_blank">↗ CPCB</a><br />
+      <a href="https://app.cpcbccr.com/AQI_India/" target="_blank">↗ CPCB AQI Dashboard</a><br />
+      <a href="https://open-meteo.com" target="_blank">↗ Open-Meteo</a>
+    </div>
+  </aside>
+
+  <!-- ═══════════════════════════════ MAIN ═══════════════════════════════ -->
+  <div class="main-content">
+
+    <!-- MAP -->
+    <div class="map-strip">
+      <div id="map"></div>
+      <div class="map-coord-badge" id="coord-badge">13.0827°N · 80.2707°E</div>
+    </div>
+
+    <!-- TABS -->
+    <div class="tab-bar">
+      <button class="tab-btn active" onclick="showTab('overview')">📊 Overview</button>
+      <button class="tab-btn" onclick="showTab('trends')">📈 Trends</button>
+      <button class="tab-btn" onclick="showTab('prediction')">🔮 Prediction</button>
+      <button class="tab-btn" onclick="showTab('issues')">⚠️ Issues &amp; Tips</button>
+    </div>
+
+    <!-- CONTENT -->
+    <div class="content-area">
+
+      <!-- Global loading / error banners -->
+      <div class="state-banner loading hidden" id="banner-loading">
+        <div class="spinner"></div>
+        <span id="banner-loading-text">Fetching data from Open-Meteo…</span>
+      </div>
+      <div class="state-banner error hidden" id="banner-error">
+        <span>🚨</span><span id="banner-error-text"></span>
+      </div>
+
+      <!-- ── TAB: OVERVIEW ── -->
+      <div class="tab-panel active" id="tab-overview">
+        <p class="section-eyebrow">Current air quality snapshot</p>
+
+        <!-- Hero AQI -->
+        <div class="hero-aqi" id="hero-aqi">
+          <div>
+            <div class="hero-aqi-eyebrow">US Air Quality Index</div>
+            <div class="hero-aqi-number" id="hero-aqi-number">—</div>
+            <div style="margin-top:8px"><span class="aqi-badge aqi-unknown" id="hero-aqi-badge">No data</span></div>
+            <div class="hero-aqi-coord" id="hero-coord">—</div>
+          </div>
+          <div class="hero-aqi-scale">
+            <div class="aqi-scale-bar">
+              <div class="aqi-scale-needle" id="aqi-needle" style="left:0%"></div>
+            </div>
+            <div class="aqi-scale-labels">
+              <span>0</span><span>50</span><span>100</span><span>150</span><span>200</span><span>300</span><span>500</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Pollutant grid -->
+        <p class="section-title">Pollutant Summary</p>
+        <div class="pollutant-grid" id="pollutant-grid">
+          <!-- filled by JS -->
+        </div>
+
+        <!-- Recent readings table -->
+        <p class="section-title">Recent Readings (last 24 h)</p>
+        <div class="data-table-wrap">
+          <table class="data-table" id="readings-table">
+            <thead><tr id="readings-head"></tr></thead>
+            <tbody id="readings-body"></tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- ── TAB: TRENDS ── -->
+      <div class="tab-panel" id="tab-trends">
+        <div class="chart-card">
+          <div class="chart-card-header">
+            <span class="chart-card-title">Pollutant Trend Over Time</span>
+            <select class="pol-select" id="trend-pol-select" onchange="renderTrendChart()">
+              <option value="pm2_5">PM2.5 (µg/m³)</option>
+              <option value="pm10">PM10 (µg/m³)</option>
+              <option value="nitrogen_dioxide">NO₂ (µg/m³)</option>
+              <option value="sulphur_dioxide">SO₂ (µg/m³)</option>
+              <option value="ozone">O₃ (µg/m³)</option>
+              <option value="us_aqi">US AQI</option>
+            </select>
+          </div>
+          <div class="chart-wrap"><canvas id="trend-chart"></canvas></div>
+          <div class="stat-row" id="trend-stats"></div>
+        </div>
+      </div>
+
+      <!-- ── TAB: PREDICTION ── -->
+      <div class="tab-panel" id="tab-prediction">
+        <div class="chart-card">
+          <div class="chart-card-header">
+            <span class="chart-card-title">RandomForest Forecast</span>
+            <select class="pol-select" id="pred-pol-select" onchange="renderForecastChart()">
+              <option value="pm2_5">PM2.5</option>
+              <option value="pm10">PM10</option>
+              <option value="nitrogen_dioxide">NO₂</option>
+              <option value="sulphur_dioxide">SO₂</option>
+              <option value="ozone">O₃</option>
+              <option value="us_aqi">US AQI</option>
+            </select>
+          </div>
+          <p style="font-size:12px;color:var(--ink-subtle);margin-bottom:var(--sp-md)">
+            Features: hour of day, day of week, 1h/3h/24h lags.
+            Trained on available history; MAE on time-based holdout.
+          </p>
+          <div id="pred-loading" class="state-banner loading hidden">
+            <div class="spinner"></div><span>Training model…</span>
+          </div>
+          <div id="pred-error" class="state-banner error hidden"><span>⚠️</span><span id="pred-error-text"></span></div>
+          <div id="mae-card" class="mae-card" style="display:none">
+            <span class="mae-label">Holdout MAE</span>
+            <span><span class="mae-value" id="mae-value">—</span> <span class="mae-unit" id="mae-unit"></span></span>
+          </div>
+          <div class="chart-wrap"><canvas id="forecast-chart"></canvas></div>
+        </div>
+      </div>
+
+      <!-- ── TAB: ISSUES & TIPS ── -->
+      <div class="tab-panel" id="tab-issues">
+
+        <!-- Issues -->
+        <p class="section-title">📋 Documented Air-Quality Issues</p>
+        <div class="issue-card" id="issues-card">
+          <p class="issue-headline" id="issues-headline">—</p>
+          <div id="issues-auto-badge" class="auto-badge hidden">
+            🤖 Auto-retrieved via OpenStreetMap Nominatim — verify with official sources.
+          </div>
+          <ul class="issue-list" id="issues-list"></ul>
+          <p class="disclaimer">Illustrative summary. Verify with
+            <a href="https://cpcb.nic.in" target="_blank">CPCB</a> /
+            <a href="https://app.cpcbccr.com/AQI_India/" target="_blank">CPCB AQI Dashboard</a>.
+          </p>
+        </div>
+
+        <!-- Recommendations -->
+        <p class="section-title">💡 Recommendations</p>
+        <div id="rec-aqi-line" style="font-size:13px;color:var(--ink-muted);margin-bottom:var(--sp-md)"></div>
+        <div class="rec-grid">
+          <div class="rec-col">
+            <p class="rec-col-title">🚶 Exposure reduction</p>
+            <ul class="rec-list" id="rec-exposure"></ul>
+          </div>
+          <div class="rec-col">
+            <p class="rec-col-title">🌱 Local improvement</p>
+            <ul class="rec-list" id="rec-improve"></ul>
+          </div>
+        </div>
+
+        <!-- Compliance -->
+        <p class="section-title">📏 Compliance vs. NAAQS &amp; WHO</p>
+        <p style="font-size:12px;color:var(--ink-subtle);margin-bottom:var(--sp-md)">
+          Computed from model-based reanalysis data. <em>Indicative only</em> — not a substitute for certified station readings.
+        </p>
+        <div class="chart-card">
+          <div class="chart-wrap-sm"><canvas id="compliance-chart"></canvas></div>
+        </div>
+
+        <!-- Links -->
+        <p class="section-eyebrow">Official sources &amp; further reading</p>
+        <div class="link-chips">
+          <a class="link-chip" href="https://cpcb.nic.in" target="_blank">↗ CPCB</a>
+          <a class="link-chip" href="https://app.cpcbccr.com/AQI_India/" target="_blank">↗ CPCB AQI Dashboard</a>
+          <a class="link-chip" href="https://open-meteo.com" target="_blank">↗ Open-Meteo</a>
+          <a class="link-chip" href="https://www.who.int/news-room/fact-sheets/detail/ambient-(outdoor)-air-quality-and-health" target="_blank">↗ WHO Air Quality Guidelines</a>
+        </div>
+      </div>
+
+    </div><!-- /content-area -->
+
+    <!-- FOOTER -->
+    <footer class="footer">
+      <strong>Air Quality Monitor &amp; Predictor</strong>
+      &nbsp;·&nbsp; Data: <a href="https://open-meteo.com" target="_blank">Open-Meteo Air Quality API</a>
+      (model-based reanalysis — <em>not</em> certified station data)
+      &nbsp;·&nbsp; ML: RandomForest per-pollutant forecast, time-based holdout MAE<br />
+      <span style="color:var(--ink-tertiary)">
+        ⚠️ Limitations: forecasts are statistical approximations; values may differ from ground-truth
+        station readings. Always verify health decisions with
+        <a href="https://cpcb.nic.in" target="_blank">CPCB</a> or WHO certified sources.
+        Open-Meteo data © Open-Meteo contributors, CC BY 4.0.
+      </span>
+    </footer>
+
+  </div><!-- /main-content -->
+</div><!-- /app-shell -->
+
+
+<!-- App logic -->
+<script src="/static/app.js"></script>
+</body>
+</html>

@@ -1,6 +1,7 @@
 """
 app.py  –  Streamlit UI for the Air Quality Monitor & Predictor.
 All business logic lives in logic.py; this file is UI-only.
+Design: Linear dark system (DESIGN.md) — canvas #010102, accent #5e6ad2.
 """
 
 from __future__ import annotations
@@ -11,6 +12,7 @@ from datetime import date, timedelta
 import folium
 import pandas as pd
 import plotly.graph_objects as go
+import plotly.io as pio
 import streamlit as st
 from streamlit_folium import st_folium
 
@@ -30,29 +32,252 @@ st.set_page_config(
 )
 
 # ---------------------------------------------------------------------------
-# Minimal CSS
+# Global Plotly template — Linear dark
+# ---------------------------------------------------------------------------
+
+_LINEAR_TEMPLATE = go.layout.Template(
+    layout=go.Layout(
+        paper_bgcolor="#010102",
+        plot_bgcolor="#0f1011",
+        font=dict(family="Inter, SF Pro Display, -apple-system, system-ui, sans-serif",
+                  color="#f7f8f8", size=13),
+        title=dict(font=dict(size=18, weight=600, color="#f7f8f8"),
+                   x=0, xanchor="left", pad=dict(l=4)),
+        xaxis=dict(gridcolor="#23252a", linecolor="#23252a",
+                   tickcolor="#62666d", tickfont=dict(color="#8a8f98", size=12),
+                   title_font=dict(color="#d0d6e0", size=13)),
+        yaxis=dict(gridcolor="#23252a", linecolor="#23252a",
+                   tickcolor="#62666d", tickfont=dict(color="#8a8f98", size=12),
+                   title_font=dict(color="#d0d6e0", size=13)),
+        legend=dict(bgcolor="#0f1011", bordercolor="#23252a", borderwidth=1,
+                    font=dict(color="#d0d6e0", size=12)),
+        hovermode="x unified",
+        hoverlabel=dict(bgcolor="#141516", bordercolor="#5e6ad2",
+                        font=dict(color="#f7f8f8", size=13)),
+        margin=dict(l=12, r=12, t=48, b=12),
+    )
+)
+pio.templates["linear_dark"] = _LINEAR_TEMPLATE
+pio.templates.default = "linear_dark"
+
+# ---------------------------------------------------------------------------
+# AQI category → design-system badge colour (keep green→maroon scale)
+# ---------------------------------------------------------------------------
+
+AQI_BADGE_COLORS = {
+    "Good":                  {"bg": "#27a644", "text": "#ffffff"},
+    "Moderate":              {"bg": "#b8860b", "text": "#ffffff"},
+    "Unhealthy for Sensitive Groups": {"bg": "#d97706", "text": "#ffffff"},
+    "Unhealthy":             {"bg": "#dc2626", "text": "#ffffff"},
+    "Very Unhealthy":        {"bg": "#9333ea", "text": "#ffffff"},
+    "Hazardous":             {"bg": "#7f1d1d", "text": "#fecaca"},
+}
+
+def _badge_colors(category: str) -> dict:
+    return AQI_BADGE_COLORS.get(category, {"bg": "#23252a", "text": "#d0d6e0"})
+
+# ---------------------------------------------------------------------------
+# Design-system CSS injection
 # ---------------------------------------------------------------------------
 
 st.markdown(
     """
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
     <style>
-    .aqi-card {
-        border-radius: 10px;
-        padding: 18px 22px;
-        margin-bottom: 10px;
-        color: #111;
-        font-weight: 600;
+    /* ── Root tokens ──────────────────────────────────────────────── */
+    :root {
+        --canvas:       #010102;
+        --surface-1:    #0f1011;
+        --surface-2:    #141516;
+        --surface-3:    #18191a;
+        --hairline:     #23252a;
+        --hairline-str: #34343a;
+        --ink:          #f7f8f8;
+        --ink-muted:    #d0d6e0;
+        --ink-subtle:   #8a8f98;
+        --ink-tertiary: #62666d;
+        --accent:       #5e6ad2;
+        --accent-hover: #828fff;
+        --success:      #27a644;
     }
+
+    /* ── Global resets ────────────────────────────────────────────── */
+    html, body, [class*="css"] {
+        font-family: 'Inter', 'SF Pro Display', -apple-system, system-ui, sans-serif !important;
+        background-color: var(--canvas) !important;
+        color: var(--ink) !important;
+    }
+
+    /* ── Sidebar ──────────────────────────────────────────────────── */
+    [data-testid="stSidebar"] {
+        background-color: var(--surface-1) !important;
+        border-right: 1px solid var(--hairline) !important;
+    }
+    [data-testid="stSidebar"] * { color: var(--ink-muted) !important; }
+    [data-testid="stSidebar"] strong { color: var(--ink) !important; }
+
+    /* ── Main area ────────────────────────────────────────────────── */
+    [data-testid="stAppViewContainer"] > .main {
+        background-color: var(--canvas) !important;
+    }
+
+    /* ── Metrics ──────────────────────────────────────────────────── */
+    [data-testid="metric-container"] {
+        background: var(--surface-1);
+        border: 1px solid var(--hairline);
+        border-radius: 12px;
+        padding: 14px 18px;
+    }
+    [data-testid="metric-container"] label { color: var(--ink-subtle) !important; font-size: 12px; }
+    [data-testid="metric-container"] [data-testid="stMetricValue"] {
+        color: var(--ink) !important; font-size: 1.5rem !important; font-weight: 600;
+    }
+
+    /* ── Tab bar ──────────────────────────────────────────────────── */
+    [data-testid="stTabs"] [role="tablist"] {
+        background: var(--surface-1);
+        border-radius: 9999px;
+        padding: 4px 6px;
+        gap: 4px;
+        border: 1px solid var(--hairline);
+        display: inline-flex;
+    }
+    [data-testid="stTabs"] button[role="tab"] {
+        border-radius: 9999px !important;
+        padding: 6px 18px !important;
+        font-size: 14px !important;
+        font-weight: 500 !important;
+        color: var(--ink-subtle) !important;
+        background: transparent !important;
+        border: none !important;
+        letter-spacing: 0;
+        transition: background 0.18s, color 0.18s;
+    }
+    [data-testid="stTabs"] button[role="tab"][aria-selected="true"] {
+        background: var(--surface-2) !important;
+        color: var(--ink) !important;
+        border: 1px solid var(--hairline-str) !important;
+    }
+
+    /* ── Cards ────────────────────────────────────────────────────── */
+    .lnr-card {
+        background: var(--surface-1);
+        border: 1px solid var(--hairline);
+        border-radius: 12px;
+        padding: 24px;
+        margin-bottom: 12px;
+    }
+    .lnr-card-feat {
+        background: var(--surface-2);
+        border: 1px solid var(--hairline-str);
+        border-radius: 12px;
+        padding: 24px;
+        margin-bottom: 12px;
+    }
+
+    /* ── Hero AQI card ────────────────────────────────────────────── */
+    .hero-aqi {
+        background: var(--surface-1);
+        border: 1px solid var(--hairline-str);
+        border-radius: 16px;
+        padding: 28px 32px;
+        margin-bottom: 24px;
+        display: flex;
+        align-items: center;
+        gap: 24px;
+    }
+    .hero-aqi-value {
+        font-size: 3.2rem;
+        font-weight: 700;
+        letter-spacing: -2px;
+        color: var(--ink);
+        line-height: 1.0;
+    }
+    .hero-aqi-label {
+        font-size: 14px;
+        color: var(--ink-subtle);
+        font-weight: 500;
+        letter-spacing: 0.4px;
+        text-transform: uppercase;
+        margin-bottom: 6px;
+    }
+    .hero-aqi-badge {
+        display: inline-block;
+        padding: 4px 14px;
+        border-radius: 9999px;
+        font-size: 13px;
+        font-weight: 600;
+        letter-spacing: 0;
+        margin-top: 6px;
+    }
+    .hero-aqi-coord {
+        font-size: 12px;
+        color: var(--ink-tertiary);
+        margin-top: 4px;
+        font-family: 'JetBrains Mono', 'SF Mono', ui-monospace, monospace;
+    }
+
+    /* ── Stat card ────────────────────────────────────────────────── */
     .stat-card {
-        background: #f0f2f6;
-        border-radius: 8px;
+        background: var(--surface-1);
+        border: 1px solid var(--hairline);
+        border-radius: 12px;
         padding: 12px 16px;
         margin-bottom: 8px;
+        color: var(--ink-subtle);
+        font-size: 13px;
     }
-    .disclaimer {
-        font-size: 0.8rem;
-        color: #666;
-        font-style: italic;
+
+    /* ── Divider ──────────────────────────────────────────────────── */
+    hr { border-color: var(--hairline) !important; }
+
+    /* ── DataFrames ───────────────────────────────────────────────── */
+    [data-testid="stDataFrame"] {
+        border: 1px solid var(--hairline);
+        border-radius: 8px;
+        overflow: hidden;
+    }
+
+    /* ── Buttons ──────────────────────────────────────────────────── */
+    .stButton > button {
+        background: var(--accent) !important;
+        color: #ffffff !important;
+        border: none !important;
+        border-radius: 8px !important;
+        font-weight: 500 !important;
+        font-size: 14px !important;
+        padding: 8px 14px !important;
+        transition: background 0.18s;
+    }
+    .stButton > button:hover { background: var(--accent-hover) !important; }
+
+    /* ── Footer ───────────────────────────────────────────────────── */
+    .lnr-footer {
+        background: var(--canvas);
+        border-top: 1px solid var(--hairline);
+        padding: 28px 0 16px;
+        margin-top: 48px;
+        color: var(--ink-subtle);
+        font-size: 12px;
+        line-height: 1.6;
+    }
+    .lnr-footer a { color: var(--accent); text-decoration: none; }
+    .lnr-footer a:hover { color: var(--accent-hover); }
+
+    /* ── Headings ─────────────────────────────────────────────────── */
+    h1, h2, h3 {
+        letter-spacing: -0.6px;
+        font-weight: 600;
+        color: var(--ink) !important;
+    }
+    .disclaimer { font-size: 12px; color: var(--ink-tertiary); font-style: italic; }
+
+    /* ── Plotly container rounding ────────────────────────────────── */
+    [data-testid="stPlotlyChart"] > div {
+        border: 1px solid var(--hairline);
+        border-radius: 12px;
+        overflow: hidden;
     }
     </style>
     """,
@@ -85,8 +310,13 @@ def cached_fetch(
 # ---------------------------------------------------------------------------
 
 with st.sidebar:
-    st.title("🌬️ Air Quality Monitor")
-    st.caption("Powered by Open-Meteo · No API key required")
+    st.markdown(
+        "<div style='font-size:1.2rem;font-weight:700;letter-spacing:-0.4px;"
+        "color:#f7f8f8;margin-bottom:2px'>🌬️ Air Quality</div>"
+        "<div style='font-size:12px;color:#8a8f98;margin-bottom:16px'>"
+        "Powered by Open-Meteo · No API key required</div>",
+        unsafe_allow_html=True,
+    )
     st.divider()
 
     # City presets
@@ -137,23 +367,27 @@ with st.sidebar:
 
     st.divider()
     st.markdown(
-        "**Official sources**\n"
-        "- [CPCB](https://cpcb.nic.in)\n"
-        "- [CPCB AQI Dashboard](https://app.cpcbccr.com/AQI_India/)"
+        "<div style='font-size:12px;color:#8a8f98'>"
+        "<strong style='color:#d0d6e0'>Official sources</strong><br>"
+        "· <a href='https://cpcb.nic.in' target='_blank' style='color:#5e6ad2'>CPCB</a><br>"
+        "· <a href='https://app.cpcbccr.com/AQI_India/' target='_blank' style='color:#5e6ad2'>"
+        "CPCB AQI Dashboard</a></div>",
+        unsafe_allow_html=True,
     )
 
 # ---------------------------------------------------------------------------
-# Map (tab-agnostic, displayed once at the top)
+# Map
 # ---------------------------------------------------------------------------
 
-st.header("🗺️ Location")
+st.markdown(
+    "<h2 style='letter-spacing:-0.6px;font-size:1.4rem;margin-bottom:8px'>🗺️ Location</h2>",
+    unsafe_allow_html=True,
+)
 
-# Session-state for lat/lon from map click
 if "map_lat" not in st.session_state:
     st.session_state.map_lat = default_lat
     st.session_state.map_lon = default_lon
 
-# Update if preset changed
 if selected_city != "Custom / Map click":
     st.session_state.map_lat = default_lat
     st.session_state.map_lon = default_lon
@@ -171,7 +405,6 @@ folium.Marker(
 
 map_data = st_folium(m, height=350, use_container_width=True, returned_objects=["last_clicked"])
 
-# If user clicked the map, update coordinates
 if map_data and map_data.get("last_clicked"):
     clicked = map_data["last_clicked"]
     st.session_state.map_lat = clicked["lat"]
@@ -182,8 +415,11 @@ if map_data and map_data.get("last_clicked"):
 lat = st.session_state.map_lat
 lon = st.session_state.map_lon
 
-st.caption(f"**Active coordinates:** {lat:.4f}°N, {lon:.4f}°E")
-
+st.markdown(
+    f"<div style='font-size:12px;color:#62666d;font-family:ui-monospace,monospace;margin-top:4px'>"
+    f"Active coordinates: {lat:.4f}°N, {lon:.4f}°E</div>",
+    unsafe_allow_html=True,
+)
 st.divider()
 
 # ---------------------------------------------------------------------------
@@ -222,19 +458,98 @@ if df.empty:
     st.stop()
 
 # ---------------------------------------------------------------------------
-# Resolve city name for non-preset locations
+# Shared computed values
 # ---------------------------------------------------------------------------
 
 city_name: str | None = selected_city if selected_city != "Custom / Map click" else None
-is_preset = city_name is not None
-
-# ---------------------------------------------------------------------------
-# Compute shared values (used across tabs)
-# ---------------------------------------------------------------------------
-
 trend_stats = logic.compute_trend_stats(df)
 current_aqi = df["us_aqi"].dropna().iloc[-1] if not df["us_aqi"].dropna().empty else float("nan")
 aqi_category, aqi_color = logic.get_aqi_category(current_aqi)
+
+# ---------------------------------------------------------------------------
+# Hero AQI card + gauge (shown once, above tabs)
+# ---------------------------------------------------------------------------
+
+bc = _badge_colors(aqi_category)
+aqi_display = f"{current_aqi:.0f}" if not pd.isna(current_aqi) else "—"
+aqi_cat_display = aqi_category if not pd.isna(current_aqi) else "No data"
+
+col_hero, col_gauge = st.columns([1, 1], gap="large")
+
+with col_hero:
+    st.markdown(
+        f"""
+        <div class="hero-aqi">
+          <div>
+            <div class="hero-aqi-label">US Air Quality Index</div>
+            <div class="hero-aqi-value">{aqi_display}</div>
+            <div>
+              <span class="hero-aqi-badge"
+                style="background:{bc['bg']};color:{bc['text']}">
+                {aqi_cat_display}
+              </span>
+            </div>
+            <div class="hero-aqi-coord">{lat:.4f}°N · {lon:.4f}°E</div>
+          </div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+with col_gauge:
+    if not pd.isna(current_aqi):
+        aqi_val = float(current_aqi)
+        # Gauge colour steps matching AQI bands
+        gauge_color = bc["bg"]
+        fig_gauge = go.Figure(go.Indicator(
+            mode="gauge+number",
+            value=aqi_val,
+            number=dict(font=dict(size=36, color="#f7f8f8", family="Inter")),
+            gauge=dict(
+                axis=dict(
+                    range=[0, 500],
+                    tickvals=[0, 50, 100, 150, 200, 300, 500],
+                    ticktext=["0", "50", "100", "150", "200", "300", "500"],
+                    tickfont=dict(color="#8a8f98", size=11),
+                    linecolor="#23252a",
+                ),
+                bar=dict(color=gauge_color, thickness=0.55),
+                bgcolor="#0f1011",
+                borderwidth=1,
+                bordercolor="#23252a",
+                steps=[
+                    dict(range=[0, 50],   color="#0f2d17"),
+                    dict(range=[50, 100],  color="#2d2400"),
+                    dict(range=[100, 150], color="#2d1800"),
+                    dict(range=[150, 200], color="#2d0000"),
+                    dict(range=[200, 300], color="#1e0033"),
+                    dict(range=[300, 500], color="#1a0000"),
+                ],
+                threshold=dict(
+                    line=dict(color=gauge_color, width=3),
+                    thickness=0.85,
+                    value=aqi_val,
+                ),
+            ),
+            title=dict(text="AQI Gauge", font=dict(color="#8a8f98", size=13)),
+            domain=dict(x=[0, 1], y=[0, 1]),
+        ))
+        fig_gauge.update_layout(
+            paper_bgcolor="#010102",
+            plot_bgcolor="#010102",
+            font=dict(family="Inter, sans-serif"),
+            margin=dict(l=24, r=24, t=48, b=8),
+            height=220,
+        )
+        st.plotly_chart(fig_gauge, use_container_width=True)
+    else:
+        st.markdown(
+            "<div class='lnr-card' style='color:#8a8f98;text-align:center;padding:48px 0'>"
+            "AQI gauge unavailable — no data</div>",
+            unsafe_allow_html=True,
+        )
+
+st.divider()
 
 # ---------------------------------------------------------------------------
 # TABS
@@ -250,21 +565,6 @@ tab_overview, tab_trends, tab_prediction, tab_issues = st.tabs(
 
 with tab_overview:
     st.subheader("Current Air Quality Snapshot")
-
-    # AQI banner
-    if not pd.isna(current_aqi):
-        st.markdown(
-            f"""
-            <div class="aqi-card" style="background:{aqi_color};">
-                <span style="font-size:1.4rem;">US AQI: {current_aqi:.0f}</span>
-                &nbsp;&nbsp;
-                <span style="font-size:1.1rem;">{aqi_category}</span>
-            </div>
-            """,
-            unsafe_allow_html=True,
-        )
-    else:
-        st.warning("AQI data not available for this location/period.")
 
     # Summary metric cards
     col_grid = st.columns(3)
@@ -330,22 +630,19 @@ with tab_trends:
                 y=series.values,
                 mode="lines",
                 name=label,
-                line=dict(color="#4a90d9", width=1.8),
+                line=dict(color="#5e6ad2", width=2.0),
                 fill="tozeroy",
-                fillcolor="rgba(74,144,217,0.12)",
+                fillcolor="rgba(94,106,210,0.10)",
             )
         )
         fig.update_layout(
             title=f"{label} — Historical",
             xaxis_title="Time",
             yaxis_title=label,
-            height=400,
-            hovermode="x unified",
-            template="plotly_white",
+            height=420,
         )
-        st.plotly_chart(fig, use_container_width=True)  # noqa: deprecated but still valid
+        st.plotly_chart(fig, use_container_width=True)
 
-        # Stat cards in a row
         s = trend_stats.get(selected_pol, {})
         c1, c2, c3, c4 = st.columns(4)
         with c1:
@@ -396,7 +693,7 @@ with tab_prediction:
                 y=history_series.values,
                 mode="lines",
                 name="History",
-                line=dict(color="#4a90d9", width=1.5),
+                line=dict(color="#5e6ad2", width=1.8),
             )
         )
         fig2.add_trace(
@@ -405,22 +702,28 @@ with tab_prediction:
                 y=forecast_df["predicted"],
                 mode="lines+markers",
                 name=f"Forecast ({horizon}h)",
-                line=dict(color="#e05c5c", width=2, dash="dot"),
-                marker=dict(size=5),
+                line=dict(color="#e05c5c", width=2.2, dash="dot"),
+                marker=dict(size=5, color="#e05c5c"),
             )
         )
         fig2.update_layout(
             title=f"{label} — History + {horizon}-Hour Forecast",
             xaxis_title="Time",
             yaxis_title=label,
-            height=430,
-            hovermode="x unified",
-            template="plotly_white",
+            height=440,
         )
         st.plotly_chart(fig2, use_container_width=True)
 
         if mae is not None:
-            st.success(f"**Holdout MAE:** {mae:.2f} {label.split('(')[-1].replace(')', '').strip()}")
+            unit = label.split("(")[-1].replace(")", "").strip()
+            st.markdown(
+                f"<div class='lnr-card-feat' style='display:inline-block;padding:10px 20px'>"
+                f"<span style='color:#8a8f98;font-size:12px'>Holdout MAE</span><br>"
+                f"<span style='font-size:1.4rem;font-weight:600;color:#f7f8f8'>{mae:.2f}</span>"
+                f"<span style='color:#8a8f98;font-size:13px'> {unit}</span>"
+                f"</div>",
+                unsafe_allow_html=True,
+            )
         else:
             st.info("MAE could not be computed (not enough data for holdout).")
 
@@ -469,7 +772,15 @@ with tab_issues:
 
     recs = logic.get_recommendations(current_aqi)
     if not pd.isna(current_aqi):
-        st.markdown(f"**Current AQI: {current_aqi:.0f} — {aqi_category}**")
+        bc2 = _badge_colors(aqi_category)
+        st.markdown(
+            f"<span style='font-size:14px;color:#d0d6e0'>Current AQI: "
+            f"<strong>{current_aqi:.0f}</strong> &nbsp;"
+            f"<span style='background:{bc2['bg']};color:{bc2['text']};"
+            f"padding:2px 10px;border-radius:9999px;font-size:12px'>"
+            f"{aqi_category}</span></span>",
+            unsafe_allow_html=True,
+        )
 
     col_r1, col_r2 = st.columns(2)
     with col_r1:
@@ -496,10 +807,8 @@ with tab_issues:
     if compliance_df.empty:
         st.info("Not enough data to compute compliance statistics.")
     else:
-        # Display table
         st.dataframe(compliance_df, use_container_width=True, hide_index=True)
 
-        # Bar chart
         chart_df = compliance_df.copy()
         chart_df = chart_df[chart_df["% Hours Exceeding"] != "N/A"].copy()
         chart_df["% Hours Exceeding"] = pd.to_numeric(
@@ -509,16 +818,18 @@ with tab_issues:
         chart_df["Label"] = chart_df["Pollutant"] + " (" + chart_df["Standard"] + ")"
 
         if not chart_df.empty:
+            bar_colors = [
+                "#e05c5c" if v > 50 else "#d97706" if v > 20 else "#5e6ad2"
+                for v in chart_df["% Hours Exceeding"]
+            ]
             fig3 = go.Figure(
                 go.Bar(
                     x=chart_df["Label"],
                     y=chart_df["% Hours Exceeding"],
-                    marker_color=[
-                        "#e05c5c" if v > 50 else "#f0a500" if v > 20 else "#4a90d9"
-                        for v in chart_df["% Hours Exceeding"]
-                    ],
+                    marker_color=bar_colors,
                     text=chart_df["% Hours Exceeding"].apply(lambda v: f"{v:.1f}%"),
                     textposition="outside",
+                    textfont=dict(color="#d0d6e0", size=11),
                 )
             )
             fig3.update_layout(
@@ -527,7 +838,6 @@ with tab_issues:
                 yaxis_title="% Hours Exceeding",
                 yaxis=dict(range=[0, max(105, chart_df["% Hours Exceeding"].max() + 10)]),
                 height=400,
-                template="plotly_white",
                 xaxis_tickangle=-30,
             )
             st.plotly_chart(fig3, use_container_width=True)
@@ -537,3 +847,29 @@ with tab_issues:
             'Verify with <a href="https://cpcb.nic.in" target="_blank">CPCB</a> official sources.</p>',
             unsafe_allow_html=True,
         )
+
+
+# ---------------------------------------------------------------------------
+# Footer
+# ---------------------------------------------------------------------------
+
+st.markdown(
+    """
+    <div class="lnr-footer">
+      <strong style="color:#d0d6e0">Air Quality Monitor & Predictor</strong>
+      &nbsp;·&nbsp;
+      Data: <a href="https://open-meteo.com" target="_blank">Open-Meteo Air Quality API</a>
+      (model-based reanalysis, not certified station data)
+      &nbsp;·&nbsp;
+      ML: RandomForest per-pollutant forecast, time-based holdout MAE
+      <br>
+      <span style="color:#62666d">
+        ⚠️ Limitations: forecasts are statistical approximations; values may differ from
+        ground-truth station readings. Always verify health decisions with
+        <a href="https://cpcb.nic.in" target="_blank">CPCB</a> or WHO certified sources.
+        Open-Meteo data is © Open-Meteo contributors, CC BY 4.0.
+      </span>
+    </div>
+    """,
+    unsafe_allow_html=True,
+)

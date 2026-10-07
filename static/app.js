@@ -1,18 +1,20 @@
 /* â”€â”€ Constants â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 const API = 'http://localhost:8000';
 const POLL_LABELS = {
-  pm2_5:'PM2.5 (Âµg/mÂ³)', pm10:'PM10 (Âµg/mÂ³)',
-  nitrogen_dioxide:'NOâ‚‚ (Âµg/mÂ³)', sulphur_dioxide:'SOâ‚‚ (Âµg/mÂ³)',
-  ozone:'Oâ‚ƒ (Âµg/mÂ³)', us_aqi:'US AQI'
+  pm2_5: 'PM2.5 (Âµg/mÂ³)', pm10: 'PM10 (Âµg/mÂ³)',
+  nitrogen_dioxide: 'NOâ‚‚ (Âµg/mÂ³)', sulphur_dioxide: 'SOâ‚‚ (Âµg/mÂ³)',
+  ozone: 'Oâ‚ƒ (Âµg/mÂ³)', us_aqi: 'US AQI'
 };
 const POLLUTANTS = Object.keys(POLL_LABELS);
 
 function aqiClass(cat) {
-  const m = { Good:'aqi-good', Moderate:'aqi-moderate',
-    'Unhealthy for Sensitive Groups':'aqi-sensitive',
-    'Unhealthy for Sensitive':'aqi-sensitive',
-    Unhealthy:'aqi-unhealthy', 'Very Unhealthy':'aqi-very',
-    Hazardous:'aqi-hazardous' };
+  const m = {
+    Good: 'aqi-good', Moderate: 'aqi-moderate',
+    'Unhealthy for Sensitive Groups': 'aqi-sensitive',
+    'Unhealthy for Sensitive': 'aqi-sensitive',
+    Unhealthy: 'aqi-unhealthy', 'Very Unhealthy': 'aqi-very',
+    Hazardous: 'aqi-hazardous'
+  };
   return m[cat] || 'aqi-unknown';
 }
 
@@ -41,10 +43,12 @@ L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
 }).addTo(map);
 
 let mapMarker = L.marker([state.lat, state.lon], {
-  icon: L.divIcon({ className:'', html:`
+  icon: L.divIcon({
+    className: '', html: `
     <div style="width:14px;height:14px;background:#5e6ad2;border:2px solid #f7f8f8;
     border-radius:50%;box-shadow:0 2px 8px rgba(94,106,210,0.6)"></div>`,
-    iconSize:[14,14], iconAnchor:[7,7] })
+    iconSize: [14, 14], iconAnchor: [7, 7]
+  })
 }).addTo(map);
 
 map.on('click', e => {
@@ -62,7 +66,7 @@ function updateMarker() {
 }
 
 /* â”€â”€ City preset â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
-document.getElementById('city-select').addEventListener('change', function() {
+document.getElementById('city-select').addEventListener('change', function () {
   const opt = this.options[this.selectedIndex];
   if (!opt.value) return;
   state.lat = +opt.dataset.lat;
@@ -74,16 +78,16 @@ document.getElementById('city-select').addEventListener('change', function() {
 /* â”€â”€ Time mode â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 function setMode(m) {
   state.mode = m;
-  document.getElementById('ctrl-days').style.display  = m === 'days'  ? '' : 'none';
+  document.getElementById('ctrl-days').style.display = m === 'days' ? '' : 'none';
   document.getElementById('ctrl-range').style.display = m === 'range' ? '' : 'none';
   document.getElementById('pill-days').classList.toggle('active', m === 'days');
   document.getElementById('pill-range').classList.toggle('active', m === 'range');
 }
 
 // Initialise date inputs to today / 14 days ago
-(function() {
+(function () {
   const today = new Date();
-  const fmt = d => d.toISOString().slice(0,10);
+  const fmt = d => d.toISOString().slice(0, 10);
   const twoWeeks = new Date(today); twoWeeks.setDate(today.getDate() - 14);
   document.getElementById('date-end').value = fmt(today);
   document.getElementById('date-start').value = fmt(twoWeeks);
@@ -154,22 +158,22 @@ async function fetchAll() {
       apiFetch(`/api/recommendations?${base}`),
     ]);
 
-    if (!dataRes.ok)     throw new Error(dataRes.error || 'Data fetch failed');
-    if (!trendsRes.ok)   throw new Error(trendsRes.error || 'Trends failed');
+    if (!dataRes.ok) throw new Error(dataRes.error || 'Data fetch failed');
+    if (!trendsRes.ok) throw new Error(trendsRes.error || 'Trends failed');
     if (!complianceRes.ok) throw new Error(complianceRes.error || 'Compliance failed');
 
-    state.data         = dataRes;
-    state.trends       = trendsRes;
-    state.issues       = issuesRes;
-    state.compliance   = complianceRes;
+    state.data = dataRes;
+    state.trends = trendsRes;
+    state.issues = issuesRes;
+    state.compliance = complianceRes;
     state.recommendations = recsRes;
-    state.forecasts    = {};  // clear cached forecasts
+    state.forecasts = {};  // clear cached forecasts
 
     hideLoading();
     renderOverview();
-    if (activeTab === 'trends')     renderTrendChart();
+    if (activeTab === 'trends') renderTrendChart();
     if (activeTab === 'prediction') renderForecastChart();
-    if (activeTab === 'issues')     renderIssuesTab();
+    if (activeTab === 'issues') renderIssuesTab();
 
   } catch (err) {
     showError(`Error: ${err.message}. Check internet connection or try again.`);
@@ -182,7 +186,7 @@ async function apiFetch(path) {
   const r = await fetch(API + path);
   if (!r.ok && r.status !== 404) {
     const t = await r.text();
-    throw new Error(`HTTP ${r.status}: ${t.slice(0,120)}`);
+    throw new Error(`HTTP ${r.status}: ${t.slice(0, 120)}`);
   }
   return r.json();
 }
@@ -221,9 +225,9 @@ function renderOverview() {
     const unit = parts[1] ? parts[1].replace(')', '').trim() : '';
 
     const trendClass = s.trend?.includes('+') ? 'trend-rising' :
-                       s.trend?.includes('-') ? 'trend-falling' : 'trend-stable';
-    const trendIcon  = s.trend?.includes('+') ? 'â†‘' :
-                       s.trend?.includes('-') ? 'â†“' : 'â†’';
+      s.trend?.includes('-') ? 'trend-falling' : 'trend-stable';
+    const trendIcon = s.trend?.includes('+') ? 'â†‘' :
+      s.trend?.includes('-') ? 'â†“' : 'â†’';
 
     const card = document.createElement('div');
     card.className = 'pol-card';
@@ -231,7 +235,7 @@ function renderOverview() {
       card.innerHTML = `
         <div class="pol-card-label">${name}</div>
         <div class="pol-card-value">${mean.toFixed(1)}<span class="pol-card-unit">${unit}</span></div>
-        <div class="pol-card-peak">Peak: ${(s.peak||0).toFixed(1)} ${unit}</div>
+        <div class="pol-card-peak">Peak: ${(s.peak || 0).toFixed(1)} ${unit}</div>
         <div class="pol-card-trend ${trendClass}">${trendIcon} ${s.trend || ''}</div>`;
     } else {
       card.innerHTML = `
@@ -257,7 +261,7 @@ function buildReadingsTable() {
   head.innerHTML = cols.map(c => `<th>${POLL_LABELS[c] || 'Time'}</th>`).join('');
   body.innerHTML = rows.map(r =>
     '<tr>' + cols.map(c => {
-      if (c === 'time') return `<td>${r.time ? r.time.slice(0,16).replace('T',' ') : 'â€”'}</td>`;
+      if (c === 'time') return `<td>${r.time ? r.time.slice(0, 16).replace('T', ' ') : 'â€”'}</td>`;
       const v = r[c];
       return v !== null && v !== undefined
         ? `<td>${(+v).toFixed(1)}</td>`
@@ -282,7 +286,7 @@ function renderTrendChart() {
     ctx.fillStyle = '#8a8f98';
     ctx.font = '14px Inter';
     ctx.textAlign = 'center';
-    ctx.fillText('No data available for this pollutant', ctx.canvas.width/2, 80);
+    ctx.fillText('No data available for this pollutant', ctx.canvas.width / 2, 80);
     document.getElementById('trend-stats').innerHTML = '';
     return;
   }
@@ -290,7 +294,7 @@ function renderTrendChart() {
   trendChart = new Chart(ctx, {
     type: 'line',
     data: {
-      labels: valid.map(r => r.time?.slice(0,16).replace('T',' ')),
+      labels: valid.map(r => r.time?.slice(0, 16).replace('T', ' ')),
       datasets: [{
         label: POLL_LABELS[pol],
         data: valid.map(r => r[pol]),
@@ -310,8 +314,8 @@ function renderTrendChart() {
   if (s.mean !== null && s.mean !== undefined) {
     pills.innerHTML = `
       <div class="stat-pill">Mean <strong>${s.mean.toFixed(1)}</strong></div>
-      <div class="stat-pill">Peak <strong>${(s.peak||0).toFixed(1)}</strong></div>
-      <div class="stat-pill">Peak time <strong>${s.peak_time ? s.peak_time.slice(0,16).replace('T',' ') : 'â€”'}</strong></div>
+      <div class="stat-pill">Peak <strong>${(s.peak || 0).toFixed(1)}</strong></div>
+      <div class="stat-pill">Peak time <strong>${s.peak_time ? s.peak_time.slice(0, 16).replace('T', ' ') : 'â€”'}</strong></div>
       <div class="stat-pill">Trend <strong>${s.trend || 'â€”'}</strong></div>`;
   } else {
     pills.innerHTML = '<div class="stat-pill" style="color:var(--ink-subtle)">No trend data available</div>';
@@ -350,16 +354,16 @@ async function renderForecastChart() {
     // History
     const histRows = (state.data?.data || []).filter(r =>
       r[pol] !== null && r[pol] !== undefined);
-    const histLabels = histRows.map(r => r.time?.slice(0,16).replace('T',' '));
-    const histVals   = histRows.map(r => r[pol]);
+    const histLabels = histRows.map(r => r.time?.slice(0, 16).replace('T', ' '));
+    const histVals = histRows.map(r => r[pol]);
 
     // Forecast
-    const fcastRows  = res.forecast || [];
-    const fcastLabels= fcastRows.map(r => (r.time||'').slice(0,16).replace('T',' '));
-    const fcastVals  = fcastRows.map(r => r.predicted);
+    const fcastRows = res.forecast || [];
+    const fcastLabels = fcastRows.map(r => (r.time || '').slice(0, 16).replace('T', ' '));
+    const fcastVals = fcastRows.map(r => r.predicted);
 
     const allLabels = [...histLabels, ...fcastLabels];
-    const histData  = [...histVals,   ...new Array(fcastRows.length).fill(null)];
+    const histData = [...histVals, ...new Array(fcastRows.length).fill(null)];
     const fcastData = [...new Array(histRows.length).fill(null), ...fcastVals];
 
     const ctx = document.getElementById('forecast-chart').getContext('2d');
@@ -396,7 +400,7 @@ async function renderForecastChart() {
     // MAE
     if (res.mae !== null && res.mae !== undefined) {
       document.getElementById('mae-value').textContent = res.mae.toFixed(2);
-      const unit = (POLL_LABELS[pol]||'').match(/\(([^)]+)\)/)?.[1] || '';
+      const unit = (POLL_LABELS[pol] || '').match(/\(([^)]+)\)/)?.[1] || '';
       document.getElementById('mae-unit').textContent = unit;
       document.getElementById('mae-card').style.display = 'inline-flex';
     }
@@ -449,7 +453,7 @@ function renderComplianceChart() {
   if (!rows.length) return;
 
   const labels = rows.map(r => `${r.Pollutant} (${r.Standard})`);
-  const vals   = rows.map(r => r['% Hours Exceeding']);
+  const vals = rows.map(r => r['% Hours Exceeding']);
   const colors = vals.map(v => v > 50 ? '#e05c5c' : v > 20 ? '#d97706' : '#5e6ad2');
 
   const ctx = document.getElementById('compliance-chart').getContext('2d');
@@ -493,14 +497,14 @@ function basePlugins() {
     }
   };
 }
-function xAxis(extra={}) {
+function xAxis(extra = {}) {
   return {
     ticks: { color: '#8a8f98', font: { size: 11, family: 'Inter' }, maxTicksLimit: 8, ...extra },
     grid: { color: '#23252a' },
     border: { color: '#23252a' },
   };
 }
-function yAxis(extra={}) {
+function yAxis(extra = {}) {
   return {
     ticks: { color: '#8a8f98', font: { size: 11, family: 'Inter' } },
     grid: { color: '#23252a' },
@@ -534,72 +538,108 @@ window.addEventListener('load', () => {
 /* ── Chat ──────────────────────────────────────────────────────────────── */
 const chatHistory = [];   // [{role:'user'|'model', content:str}]
 
+function renderMarkdown(src) {
+  const esc = s => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  const inline = s => esc(s)
+    .replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
+    .replace(/\*([^*\n]+)\*/g, '<em>$1</em>')
+    .replace(/`([^`]+)`/g, '<code>$1</code>');
+  const cells = l => l.trim().replace(/^\||\|$/g, '').split('|').map(c => c.trim());
+  const lines = src.split('\n');
+  let html = '', inList = false, i = 0;
+  const closeList = () => { if (inList) { html += '</ul>'; inList = false; } };
+
+  while (i < lines.length) {
+    const line = lines[i];
+    if (line.includes('|') && i + 1 < lines.length && /^\s*\|?\s*:?-{2,}/.test(lines[i + 1])) {
+      closeList();
+      const head = cells(line);
+      i += 2;
+      const rows = [];
+      while (i < lines.length && lines[i].includes('|')) { rows.push(cells(lines[i])); i++; }
+      html += '<table><thead><tr>' + head.map(h => `<th>${inline(h)}</th>`).join('') +
+        '</tr></thead><tbody>' +
+        rows.map(r => '<tr>' + r.map(c => `<td>${inline(c)}</td>`).join('') + '</tr>').join('') +
+        '</tbody></table>';
+      continue;
+    }
+    const li = line.match(/^\s*[-*•]\s+(.*)/);
+    if (li) {
+      if (!inList) { html += '<ul>'; inList = true; }
+      html += `<li>${inline(li[1])}</li>`; i++; continue;
+    }
+    closeList();
+    if (line.trim() === '---') html += '<hr>';
+    else if (line.trim()) {
+      const h = line.match(/^#{1,4}\s+(.*)/);
+      html += h ? `<p><strong>${inline(h[1])}</strong></p>` : `<p>${inline(line)}</p>`;
+    }
+    i++;
+  }
+  closeList();
+  return html;
+}
+
 function appendChatMessage(role, text) {
   const list = document.getElementById('chat-messages');
   const row = document.createElement('div');
   row.className = `chat-msg ${role}`;
   const bubble = document.createElement('div');
   bubble.className = 'chat-bubble';
-  bubble.textContent = text;
+  if (role === 'model') bubble.innerHTML = renderMarkdown(text);   // HTML is escaped first
+  else bubble.textContent = text;
   row.appendChild(bubble);
   list.appendChild(row);
   list.scrollTop = list.scrollHeight;
 }
 
 async function sendChat() {
-  const input = document.getElementById('chat-input');
-  const btn   = document.getElementById('chat-send-btn');
-  const typing = document.getElementById('chat-typing');
+  const input   = document.getElementById('chat-input');
+  const btn     = document.getElementById('chat-send-btn');
+  const typing  = document.getElementById('chat-typing');
   const question = input.value.trim();
   if (!question) return;
 
-  // Show user message
   appendChatMessage('user', question);
   chatHistory.push({ role: 'user', content: question });
   input.value = '';
   btn.disabled = true;
-
-  // Show typing indicator
   typing.classList.remove('hidden');
   document.getElementById('chat-messages').scrollTop = 9999;
 
-  // Build time params from current UI state
-  const timeMode = document.getElementById('pill-days').classList.contains('active') ? 'days' : 'range';
-  const days     = timeMode === 'days' ? parseInt(document.getElementById('days-slider').value) : null;
-  const startDate = timeMode === 'range' ? document.getElementById('date-start').value : null;
-  const endDate   = timeMode === 'range' ? document.getElementById('date-end').value   : null;
-
-  // City name from city select
-  const cityEl = document.getElementById('city-select');
-  const city = cityEl.value || null;
+  // Exact UI values — no fallbacks that mask missing data
+  const isRange  = document.getElementById('pill-range').classList.contains('active');
+  const days     = isRange ? null : parseInt(document.getElementById('days-slider').value, 10);
+  const startDate = isRange ? document.getElementById('date-start').value || null : null;
+  const endDate   = isRange ? document.getElementById('date-end').value   || null : null;
+  const cityEl   = document.getElementById('city-select');
+  const city     = cityEl.value || null;
 
   const payload = {
     question,
-    lat:  state.lat,
-    lon:  state.lon,
-    days: days || 7,
-    start_date: startDate || null,
-    end_date:   endDate   || null,
+    lat:        state.lat,
+    lon:        state.lon,
+    days,
+    start_date: startDate,
+    end_date:   endDate,
     city,
-    // Send last 8 turns as history for multi-turn context
-    history: chatHistory.slice(-9, -1),
+    history:    chatHistory.slice(-11, -1),   // last 10 turns (excluding current)
   };
 
   try {
-    const res = await fetch(`${API}/api/chat`, {
-      method: 'POST',
+    const res  = await fetch(`${API}/api/chat`, {
+      method:  'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload),
+      body:    JSON.stringify(payload),
     });
     const data = await res.json();
     typing.classList.add('hidden');
-
-    const answer = data.answer || (data.ok === false ? '⚠️ ' + data.answer : 'No response received.');
+    const answer = data.answer || '⚠️ No answer received.';
     appendChatMessage('model', answer);
     chatHistory.push({ role: 'model', content: answer });
   } catch (err) {
     typing.classList.add('hidden');
-    const errMsg = '⚠️ Could not reach the API. Is the server running? (' + err.message + ')';
+    const errMsg = `⚠️ Could not reach the API. Is the server running? (${err.message})`;
     appendChatMessage('model', errMsg);
     chatHistory.push({ role: 'model', content: errMsg });
   }
@@ -611,4 +651,4 @@ async function sendChat() {
 function chatSuggest(text) {
   document.getElementById('chat-input').value = text;
   sendChat();
-}
+}

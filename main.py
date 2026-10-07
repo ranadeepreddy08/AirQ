@@ -449,47 +449,47 @@ class ChatRequest(BaseModel):
 @app.post("/api/chat", summary="Chat with the air-quality assistant (Gemini-backed)")
 def chat_endpoint(req: ChatRequest):
     try:
-        # Resolve time window
         past_days, sd, ed = _resolve_time_params(req.days, req.start_date, req.end_date)
 
-        # Fetch data (cached)
         df = _fetch_df(req.lat, req.lon, past_days, sd, ed)
         if df.empty:
             return {"ok": False, "answer": "No air-quality data available for this location and time period."}
 
-        # Build context
+        preset = req.city if req.city in logic.CITY_ISSUES else None
+        place = logic.place_name_for(req.lat, req.lon, preset)
+
         trend_stats = logic.compute_trend_stats(df)
-        issues = logic.get_location_issues(req.lat, req.lon, req.city)
+        issues = logic.get_city_issues(preset)
         compliance_df = logic.compliance_check(df)
         aqi_series = df["us_aqi"].dropna()
         current_aqi = float(aqi_series.iloc[-1]) if not aqi_series.empty else float("nan")
         recs = logic.get_recommendations(current_aqi)
 
+        # Forecasts for all pollutants (cached 15 min, first call takes a few seconds)
+        horizon = 24
+        fkey = f"fc:{req.lat}:{req.lon}:{past_days}:{sd}:{ed}:{horizon}"
+        forecast_results = _cache_get(fkey)
+        if forecast_results is None:
+            forecast_results = logic.run_predictions(df, horizon=horizon)
+            _cache_set(fkey, forecast_results)
+
         context = logic.build_context(
-            lat=req.lat,
-            lon=req.lon,
-            df=df,
-            trend_stats=trend_stats,
-            issues=issues,
-            compliance_df=compliance_df,
-            recs=recs,
-            city_name=req.city,
+            lat=req.lat, lon=req.lon, df=df,
+            trend_stats=trend_stats, issues=issues,
+            compliance_df=compliance_df, recs=recs,
+            place_name=place, past_days=past_days,
+            start_date=sd, end_date=ed,
+            horizon=horizon, forecast_results=forecast_results,
         )
 
-        # Convert history to dicts
-        history = [{"role": m.role, "content": m.content} for m in req.history]
+        # Other places mentioned in the question (comparison / travel)
+        context += logic.build_extra_contexts(
+            req.question, exclude=[place or "", preset or ""], past_days=past_days or 7
+        )
 
-        # Get answer
-        answer = logic.answer_question(req.question, context, history)
-        return {"ok": True, "answer": answer}
+        history = [{"role": m.role, "content": m.content} for m in req.history]
+        answer, used_gemini = logic.answer_question(req.question, context, history)
+        return {"ok": True, "answer": answer, "used_gemini": used_gemini, "place": place}
 
     except Exception as exc:
         return {"ok": False, "answer": f"Sorry, I encountered an error: {exc}"}
-
-
-# ---------------------------------------------------------------------------
-# Entry-point
-# ---------------------------------------------------------------------------
-
-if __name__ == "__main__":
-    uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=False)

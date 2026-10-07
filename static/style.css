@@ -473,8 +473,8 @@ input[type="range"] {
   border-radius: 16px;
   font-size: 13px;
   line-height: 1.55;
-  white-space: pre-wrap;
   word-break: break-word;
+  overflow-wrap: anywhere;
 }
 .chat-msg.user .chat-bubble {
   background: var(--accent);
@@ -487,6 +487,17 @@ input[type="range"] {
   color: var(--ink-muted);
   border-bottom-left-radius: 4px;
 }
+/* Inner markdown elements inside model bubble */
+.chat-msg.model .chat-bubble p      { margin: 0 0 6px; }
+.chat-msg.model .chat-bubble p:last-child { margin-bottom: 0; }
+.chat-msg.model .chat-bubble ul     { margin: 4px 0 6px 18px; padding: 0; }
+.chat-msg.model .chat-bubble li     { margin-bottom: 3px; }
+.chat-msg.model .chat-bubble code   { background: var(--surface-3); border-radius: 4px; padding: 1px 5px; font-size: 12px; }
+.chat-msg.model .chat-bubble hr     { border: none; border-top: 1px solid var(--hairline-str); margin: 8px 0; }
+.chat-msg.model .chat-bubble table  { border-collapse: collapse; width: 100%; margin: 6px 0; font-size: 12px; }
+.chat-msg.model .chat-bubble th,
+.chat-msg.model .chat-bubble td     { border: 1px solid #23252a; padding: 4px 8px; text-align: left; }
+.chat-msg.model .chat-bubble th     { background: var(--surface-3); font-weight: 600; }
 
 /* Typing indicator */
 .chat-typing {

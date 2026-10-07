@@ -12,7 +12,7 @@ import time
 import warnings
 from datetime import date
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any, List, Optional
 
 import numpy as np
 import pandas as pd
@@ -423,6 +423,68 @@ def get_recommendations(
         "exposure": recs.get("exposure", []),
         "improvement": recs.get("improvement", []),
     }
+
+
+# ── /api/chat ─────────────────────────────────────────────────────────────
+
+from pydantic import BaseModel  # already pulled in by FastAPI
+
+
+class ChatMessage(BaseModel):
+    role: str          # "user" | "model"
+    content: str
+
+
+class ChatRequest(BaseModel):
+    question: str
+    lat: float
+    lon: float
+    days: Optional[int] = 7
+    start_date: Optional[str] = None
+    end_date: Optional[str] = None
+    city: Optional[str] = None
+    history: List[ChatMessage] = []
+
+
+@app.post("/api/chat", summary="Chat with the air-quality assistant (Gemini-backed)")
+def chat_endpoint(req: ChatRequest):
+    try:
+        # Resolve time window
+        past_days, sd, ed = _resolve_time_params(req.days, req.start_date, req.end_date)
+
+        # Fetch data (cached)
+        df = _fetch_df(req.lat, req.lon, past_days, sd, ed)
+        if df.empty:
+            return {"ok": False, "answer": "No air-quality data available for this location and time period."}
+
+        # Build context
+        trend_stats = logic.compute_trend_stats(df)
+        issues = logic.get_location_issues(req.lat, req.lon, req.city)
+        compliance_df = logic.compliance_check(df)
+        aqi_series = df["us_aqi"].dropna()
+        current_aqi = float(aqi_series.iloc[-1]) if not aqi_series.empty else float("nan")
+        recs = logic.get_recommendations(current_aqi)
+
+        context = logic.build_context(
+            lat=req.lat,
+            lon=req.lon,
+            df=df,
+            trend_stats=trend_stats,
+            issues=issues,
+            compliance_df=compliance_df,
+            recs=recs,
+            city_name=req.city,
+        )
+
+        # Convert history to dicts
+        history = [{"role": m.role, "content": m.content} for m in req.history]
+
+        # Get answer
+        answer = logic.answer_question(req.question, context, history)
+        return {"ok": True, "answer": answer}
+
+    except Exception as exc:
+        return {"ok": False, "answer": f"Sorry, I encountered an error: {exc}"}
 
 
 # ---------------------------------------------------------------------------

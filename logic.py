@@ -538,3 +538,251 @@ def validate_date_range(start: date, end: date) -> Optional[str]:
     if (today - end).days > 365 * 2:
         return "Open-Meteo free tier typically covers the last 2 years. Try a more recent range."
     return None
+
+
+# ---------------------------------------------------------------------------
+# Chatbot helpers: build_context + answer_question
+# ---------------------------------------------------------------------------
+
+def build_context(
+    lat: float,
+    lon: float,
+    df: pd.DataFrame,
+    trend_stats: dict,
+    issues: dict,
+    compliance_df: pd.DataFrame,
+    recs: dict,
+    city_name: Optional[str] = None,
+) -> str:
+    """
+    Build a compact plain-text context summary for the AI chatbot.
+    Keeps token count low while covering all data the user sees.
+    """
+    lines: list[str] = []
+
+    # Location
+    loc = city_name or f"{lat:.4f}°N, {lon:.4f}°E"
+    lines.append(f"=== AIR QUALITY CONTEXT FOR {loc.upper()} ===")
+
+    # Current AQI
+    aqi_series = df["us_aqi"].dropna() if "us_aqi" in df.columns else pd.Series([], dtype=float)
+    if not aqi_series.empty:
+        aqi_val = float(aqi_series.iloc[-1])
+        cat, _ = get_aqi_category(aqi_val)
+        lines.append(f"Current US AQI: {aqi_val:.0f} ({cat})")
+    else:
+        lines.append("Current US AQI: Not available")
+
+    # Pollutant means and trends
+    lines.append("\nPollutant statistics (mean / peak / trend):")
+    for pol in POLLUTANTS:
+        if pol == "us_aqi":
+            continue
+        s = trend_stats.get(pol, {})
+        label = POLLUTANT_LABELS.get(pol, pol)
+        mean = s.get("mean")
+        peak = s.get("peak")
+        trend = s.get("trend", "unavailable")
+        if mean is not None:
+            lines.append(f"  {label}: mean={mean:.1f}, peak={peak:.1f}, trend={trend}")
+        else:
+            lines.append(f"  {label}: Not available")
+
+    # Forecast summary (latest 3 predicted values from run_predictions if passed)
+    # We pass recs which contains AQI category — forecast chart is per-poll, skipped here for brevity
+
+    # Compliance summary
+    lines.append("\nCompliance vs NAAQS / WHO (% hours exceeding):")
+    if compliance_df is not None and not compliance_df.empty:
+        for _, row in compliance_df.iterrows():
+            pct = row.get("% Hours Exceeding", "N/A")
+            lines.append(
+                f"  {row['Pollutant']} ({row['Standard']}): "
+                f"{pct}% hours exceed limit of {row['Limit (µg/m³)']} µg/m³"
+            )
+    else:
+        lines.append("  Compliance data not available.")
+
+    # Issues
+    lines.append(f"\nDocumented issues ({issues.get('headline', '')}):")
+    for iss in issues.get("issues", [])[:5]:
+        lines.append(f"  - {iss}")
+
+    # Recommendations
+    lines.append(f"\nRecommendations (AQI category: {recs.get('category', 'unknown')}):")
+    for tip in recs.get("exposure", [])[:4]:
+        lines.append(f"  Exposure: {tip}")
+    for tip in recs.get("improvement", [])[:3]:
+        lines.append(f"  Improvement: {tip}")
+
+    lines.append("\n[Data: Open-Meteo model-based reanalysis, not certified station readings]")
+    return "\n".join(lines)
+
+
+_SYSTEM_PROMPT = """\
+You are an air quality assistant. Your job is to answer questions ONLY about air quality, \
+pollution levels, health effects of pollutants, and practical advice based on the data \
+provided in the context below. Do not answer questions unrelated to air quality.
+
+Rules:
+- Base all answers on the supplied context data. If data is missing, say so explicitly.
+- Give practical, actionable advice.
+- For health guidance, always add: "Note: this is general air quality information, \
+not medical advice. Consult a doctor for personal health decisions."
+- Be concise (3–6 sentences unless more detail is requested).
+- If asked about a pollutant not in the context, say the data is unavailable.
+"""
+
+
+def answer_question(
+    question: str,
+    context: str,
+    history: list[dict] | None = None,
+) -> str:
+    """
+    Answer an air-quality question using Gemini 2.5 Flash.
+    Falls back to simple rule-based answers if the API key is missing or call fails.
+    history: list of {"role": "user"|"model", "parts": [str]} for multi-turn.
+    """
+    import os
+
+    # Load .env if present (python-dotenv)
+    try:
+        from dotenv import load_dotenv
+        load_dotenv(override=False)
+    except ImportError:
+        pass
+
+    api_key = os.environ.get("GEMINI_API_KEY", "").strip()
+
+    if api_key:
+        try:
+            import google.generativeai as genai  # type: ignore
+
+            genai.configure(api_key=api_key)
+            model = genai.GenerativeModel(
+                model_name="gemini-2.5-flash",
+                system_instruction=_SYSTEM_PROMPT,
+            )
+
+            # Build chat history
+            chat_history = []
+            for msg in (history or []):
+                role = msg.get("role", "user")
+                text = msg.get("content", "")
+                if role in ("user", "model") and text:
+                    chat_history.append({"role": role, "parts": [text]})
+
+            chat = model.start_chat(history=chat_history)
+            prompt = f"Context data:\n{context}\n\nQuestion: {question}"
+            response = chat.send_message(prompt)
+            return response.text.strip()
+
+        except Exception as exc:
+            # Fall through to rule-based fallback
+            _fallback_reason = str(exc)
+    else:
+        _fallback_reason = "GEMINI_API_KEY not set"
+
+    # ── Rule-based fallback ────────────────────────────────────────────────
+    q = question.lower()
+    ctx = context.lower()
+
+    # Extract current AQI from context
+    import re
+    aqi_match = re.search(r"current us aqi:\s*([0-9.]+)\s*\(([^)]+)\)", ctx)
+    aqi_val = float(aqi_match.group(1)) if aqi_match else None
+    aqi_cat = aqi_match.group(2).strip() if aqi_match else "unknown"
+
+    if any(w in q for w in ("aqi", "air quality", "overall", "index", "level")):
+        if aqi_val is not None:
+            return (
+                f"The current US AQI is {aqi_val:.0f} ({aqi_cat}). "
+                + _fallback_advice(aqi_cat)
+            )
+        return "Current AQI data is not available in the loaded dataset."
+
+    if any(w in q for w in ("pm2.5", "pm2_5", "pm 2.5", "fine particle")):
+        return _extract_pollutant_answer("pm2.5 (ug/m3)", ctx, "PM2.5")
+
+    if any(w in q for w in ("pm10", "pm 10", "coarse particle")):
+        return _extract_pollutant_answer("pm10 (ug/m3)", ctx, "PM10")
+
+    if any(w in q for w in ("no2", "nitrogen dioxide", "no₂")):
+        return _extract_pollutant_answer("no2 (ug/m3)", ctx, "NO₂")
+
+    if any(w in q for w in ("so2", "sulphur", "sulfur")):
+        return _extract_pollutant_answer("so2 (ug/m3)", ctx, "SO₂")
+
+    if any(w in q for w in ("ozone", "o3", "o₃")):
+        return _extract_pollutant_answer("o3 (ug/m3)", ctx, "O₃")
+
+    if any(w in q for w in ("safe", "outdoor", "exercise", "walk", "run", "jog")):
+        if aqi_val is not None:
+            return _safety_advice(aqi_val, aqi_cat)
+        return "AQI data is unavailable. Please try again after loading data."
+
+    if any(w in q for w in ("mask", "n95", "filter")):
+        if aqi_val and aqi_val > 100:
+            return "Given the current AQI level, wearing an N95 or KN95 mask outdoors is advisable, especially for sensitive groups. Note: this is general air quality information, not medical advice."
+        return "Current AQI levels are relatively low; a mask may not be necessary, but sensitive groups may still benefit. Note: not medical advice — consult a doctor."
+
+    if any(w in q for w in ("recommend", "tip", "advice", "what should")):
+        # Find recommendations section in context
+        idx = ctx.find("recommendations")
+        if idx >= 0:
+            snippet = context[idx: idx + 400]
+            return f"Based on the current data:\n{snippet}\n\nNote: not medical advice."
+        return "Load data first to get personalised recommendations."
+
+    if any(w in q for w in ("compliance", "exceed", "limit", "naaqs", "who")):
+        idx = ctx.find("compliance")
+        if idx >= 0:
+            snippet = context[idx: idx + 400]
+            return f"Compliance summary:\n{snippet}\n\n(Indicative only; verify with CPCB.)"
+        return "Compliance data is not available."
+
+    # Generic fallback
+    return (
+        "I can answer questions about the air quality data shown on this page — "
+        "current AQI, pollutant levels, health advice, compliance, or recommendations. "
+        "Please ask something specific about air quality. "
+        f"(Note: Gemini API unavailable — {_fallback_reason})"
+    )
+
+
+def _fallback_advice(category: str) -> str:
+    advice = {
+        "good": "Air quality is satisfactory; outdoor activities are safe for most people.",
+        "moderate": "Unusually sensitive individuals should consider limiting prolonged outdoor exertion.",
+        "unhealthy for sensitive": "Sensitive groups (elderly, children, those with heart/lung conditions) should reduce outdoor activity.",
+        "unhealthy": "Everyone should reduce prolonged or heavy outdoor exertion. Sensitive groups should avoid outdoor activity.",
+        "very unhealthy": "Health alert: everyone should avoid outdoor exertion. Stay indoors with air purification if possible.",
+        "hazardous": "Health emergency: everyone should avoid outdoor activity entirely. Keep windows closed.",
+    }
+    return advice.get(category.lower(), "Check local authorities for guidance.")
+
+
+def _safety_advice(aqi_val: float, aqi_cat: str) -> str:
+    if aqi_val <= 50:
+        return f"AQI is {aqi_val:.0f} (Good) — outdoor exercise is safe for everyone."
+    if aqi_val <= 100:
+        return f"AQI is {aqi_val:.0f} (Moderate) — most people can exercise outdoors; very sensitive individuals may want to limit prolonged exertion."
+    if aqi_val <= 150:
+        return f"AQI is {aqi_val:.0f} (Unhealthy for Sensitive Groups) — sensitive groups should limit outdoor exertion. Healthy adults can still exercise briefly."
+    if aqi_val <= 200:
+        return f"AQI is {aqi_val:.0f} (Unhealthy) — everyone should reduce prolonged outdoor activity. Note: not medical advice."
+    return f"AQI is {aqi_val:.0f} ({aqi_cat}) — outdoor activity is not recommended. Stay indoors. Note: not medical advice."
+
+
+def _extract_pollutant_answer(label_fragment: str, ctx_lower: str, display_name: str) -> str:
+    import re
+    pattern = rf"{re.escape(label_fragment)}:\s*mean=([0-9.]+),\s*peak=([0-9.]+),\s*trend=([^\n]+)"
+    m = re.search(pattern, ctx_lower)
+    if m:
+        mean, peak, trend = m.group(1), m.group(2), m.group(3).strip()
+        return (
+            f"{display_name}: mean {mean} µg/m³, peak {peak} µg/m³, trend: {trend}. "
+            "Refer to WHO guidelines for health context. Note: data is model-based, not from certified stations."
+        )
+    return f"{display_name} data is not available in the current dataset."

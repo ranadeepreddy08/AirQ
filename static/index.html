@@ -1,4 +1,4 @@
-﻿<!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="UTF-8" />
@@ -112,6 +112,7 @@
       <button class="tab-btn" onclick="showTab('trends')">📈 Trends</button>
       <button class="tab-btn" onclick="showTab('prediction')">🔮 Prediction</button>
       <button class="tab-btn" onclick="showTab('issues')">⚠️ Issues &amp; Tips</button>
+      <button class="tab-btn" onclick="showTab('chat')">💬 Chat</button>
     </div>
 
     <!-- CONTENT -->
@@ -261,6 +262,46 @@
           <a class="link-chip" href="https://open-meteo.com" target="_blank">↗ Open-Meteo</a>
           <a class="link-chip" href="https://www.who.int/news-room/fact-sheets/detail/ambient-(outdoor)-air-quality-and-health" target="_blank">↗ WHO Air Quality Guidelines</a>
         </div>
+      </div>
+
+      <!-- ── TAB: CHAT ── -->
+      <div class="tab-panel" id="tab-chat">
+        <p class="section-eyebrow">Ask the air quality assistant (powered by Gemini)</p>
+
+        <!-- Suggested questions -->
+        <div class="chat-suggestions" id="chat-suggestions">
+          <button class="chat-sugg-btn" onclick="chatSuggest('What is the current AQI and is it safe to go outside?')">🌡️ Current AQI &amp; safety</button>
+          <button class="chat-sugg-btn" onclick="chatSuggest('What are the PM2.5 levels and should I wear a mask?')">😷 PM2.5 &amp; mask advice</button>
+          <button class="chat-sugg-btn" onclick="chatSuggest('Which pollutants are exceeding WHO guidelines?')">📋 WHO compliance</button>
+        </div>
+
+        <!-- Message list -->
+        <div class="chat-messages" id="chat-messages">
+          <div class="chat-msg model">
+            <div class="chat-bubble">
+              👋 Hi! I'm your air quality assistant. Load data with the <strong>Load Data</strong> button, then ask me anything about air quality, pollutant levels, health advice, or compliance for the selected location.
+            </div>
+          </div>
+        </div>
+
+        <!-- Loading indicator -->
+        <div class="chat-typing hidden" id="chat-typing">
+          <div class="chat-dot"></div><div class="chat-dot"></div><div class="chat-dot"></div>
+        </div>
+
+        <!-- Input row -->
+        <div class="chat-input-row">
+          <input
+            id="chat-input"
+            class="chat-input"
+            type="text"
+            placeholder="Ask about air quality, pollutants, health tips…"
+            maxlength="400"
+            onkeydown="if(event.key==='Enter')sendChat()"
+          />
+          <button class="chat-send-btn" id="chat-send-btn" onclick="sendChat()">Send ↑</button>
+        </div>
+        <p class="disclaimer" style="margin-top:8px">Responses are AI-generated. Always verify health decisions with CPCB/WHO certified sources.</p>
       </div>
 
     </div><!-- /content-area -->

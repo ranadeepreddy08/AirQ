@@ -1,4 +1,4 @@
-﻿/* â”€â”€ Constants â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
+/* â”€â”€ Constants â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 const API = 'http://localhost:8000';
 const POLL_LABELS = {
   pm2_5:'PM2.5 (Âµg/mÂ³)', pm10:'PM10 (Âµg/mÂ³)',
@@ -530,3 +530,85 @@ window.addEventListener('load', () => {
   document.getElementById('pred-pol-select').addEventListener('change', renderForecastChart);
   fetchAll();
 });
+
+/* ── Chat ──────────────────────────────────────────────────────────────── */
+const chatHistory = [];   // [{role:'user'|'model', content:str}]
+
+function appendChatMessage(role, text) {
+  const list = document.getElementById('chat-messages');
+  const row = document.createElement('div');
+  row.className = `chat-msg ${role}`;
+  const bubble = document.createElement('div');
+  bubble.className = 'chat-bubble';
+  bubble.textContent = text;
+  row.appendChild(bubble);
+  list.appendChild(row);
+  list.scrollTop = list.scrollHeight;
+}
+
+async function sendChat() {
+  const input = document.getElementById('chat-input');
+  const btn   = document.getElementById('chat-send-btn');
+  const typing = document.getElementById('chat-typing');
+  const question = input.value.trim();
+  if (!question) return;
+
+  // Show user message
+  appendChatMessage('user', question);
+  chatHistory.push({ role: 'user', content: question });
+  input.value = '';
+  btn.disabled = true;
+
+  // Show typing indicator
+  typing.classList.remove('hidden');
+  document.getElementById('chat-messages').scrollTop = 9999;
+
+  // Build time params from current UI state
+  const timeMode = document.getElementById('pill-days').classList.contains('active') ? 'days' : 'range';
+  const days     = timeMode === 'days' ? parseInt(document.getElementById('days-slider').value) : null;
+  const startDate = timeMode === 'range' ? document.getElementById('date-start').value : null;
+  const endDate   = timeMode === 'range' ? document.getElementById('date-end').value   : null;
+
+  // City name from city select
+  const cityEl = document.getElementById('city-select');
+  const city = cityEl.value || null;
+
+  const payload = {
+    question,
+    lat:  state.lat,
+    lon:  state.lon,
+    days: days || 7,
+    start_date: startDate || null,
+    end_date:   endDate   || null,
+    city,
+    // Send last 8 turns as history for multi-turn context
+    history: chatHistory.slice(-9, -1),
+  };
+
+  try {
+    const res = await fetch(`${API}/api/chat`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+    const data = await res.json();
+    typing.classList.add('hidden');
+
+    const answer = data.answer || (data.ok === false ? '⚠️ ' + data.answer : 'No response received.');
+    appendChatMessage('model', answer);
+    chatHistory.push({ role: 'model', content: answer });
+  } catch (err) {
+    typing.classList.add('hidden');
+    const errMsg = '⚠️ Could not reach the API. Is the server running? (' + err.message + ')';
+    appendChatMessage('model', errMsg);
+    chatHistory.push({ role: 'model', content: errMsg });
+  }
+
+  btn.disabled = false;
+  input.focus();
+}
+
+function chatSuggest(text) {
+  document.getElementById('chat-input').value = text;
+  sendChat();
+}
